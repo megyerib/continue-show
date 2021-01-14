@@ -2,6 +2,7 @@ $vlcIni  = $env:APPDATA + "\vlc\vlc-qt-interface.ini"
 $vidDir  = $args[0]
 $vlcPath = "C:\Program Files\VideoLAN\VLC\vlc.exe"
 $hstFile = "history.txt"
+$validFileTypes = @('*.mp4', '*.mkv', '*.avi')
 
 function getFileToPlay_vlc
 {
@@ -22,7 +23,7 @@ function getFileToPlay_vlc
 	}
 
 	# Get movie files
-	$movies = Get-ChildItem -Path $vidDir | where {! $_.PSIsContainer}
+	$movies = gci -Path $vidDir -Include $validFileTypes -Recurse | where {! $_.PSIsContainer}
 
 	$files = @()
 
@@ -107,6 +108,19 @@ function getFileToPlay_txt
 	return $return
 }
 
+function getFirstFile
+{
+	$return = @{}
+	$return.success = $true
+
+	$movies = gci -Path $vidDir -Include $validFileTypes -Recurse | where {! $_.PSIsContainer}
+
+	$return.name = $movies[0].Name
+	$return.time = 0
+	
+	return $return
+}
+
 function writeHistoryTxt
 {
 	$res = getFileToPlay_vlc
@@ -133,6 +147,10 @@ $res = getFileToPlay_vlc
 if (!$res.success)
 {
 	$res = getFileToPlay_txt
+}
+if (!$res.success)
+{
+	$res = getFirstFile
 }
 
 $filePath = $vidDir + "\" + $res.name
