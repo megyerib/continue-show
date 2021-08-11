@@ -115,6 +115,7 @@ return: recently played video if it wasn't finished
 """
 def get_video_to_play():
     entry = get_recently_played()
+    videos = list_videos()
     
     if None != entry:
         if 0 != entry['time']:
@@ -131,9 +132,10 @@ def get_video_to_play():
                     break
             
             video_to_play = {'path': videos[(index + 1) % len(videos)], 'time': 0}
-    else:
-        videos = list_videos()
+    elif len(videos) != 0:
         video_to_play = {'path': videos[0], 'time': 0}
+    else:
+        return None
     
     return video_to_play
 
@@ -161,7 +163,11 @@ def play_video(video):
 # Main
 
 video_to_play = get_video_to_play()
-play_video(video_to_play)
 
-recently_played = get_recently_played()
-write_json_history(recently_played)
+if video_to_play != None:
+    play_video(video_to_play)
+
+    recently_played = get_recently_played()
+    write_json_history(recently_played)
+else:
+    print("There are no videos to play in this directory")
