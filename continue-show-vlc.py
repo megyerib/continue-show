@@ -1,4 +1,4 @@
-import os, sys, glob, re, configparser, json, urllib.parse, subprocess, time
+import os, sys, re, configparser, json, urllib.parse, subprocess
 
 # Arguments
 if len(sys.argv) < 3:
@@ -14,11 +14,30 @@ valid_file_types = {'mp4', 'mkv', 'avi'}
 json_history_name = 'recently_played.json'
 
 """
+List all files in a directory tree with relative path
+(ext4 does not return file names sorted)
+"""
+def list_recursively(path):
+    dir = list(os.walk(path))[0]
+
+    subdirs = sorted(dir[1])
+    files = sorted(dir[2])
+
+    file_list = []
+
+    for d in subdirs:
+        file_list += [f"{d}/{f}" for f in list_recursively(f"{path}/{d}")]
+            
+    file_list += files
+    
+    return file_list
+
+"""
 return: The list of videos in the current directory and its subdirectories
 """
 def list_videos():
-    files = glob.glob("**/*", recursive = True) # List all files, filter later
-    
+    files = list_recursively('.')
+
     re_object = re.compile(f".+\.({'|'.join(valid_file_types)})$") #File type filter
     videos = list(filter(re_object.match, files))
     
@@ -49,7 +68,12 @@ def list_vlc_history(path):
             config['RecentsMRL']['times'] = config['RecentsMRL']['times'][:-1]
         
         # Split
-        list = [path.replace('file:///', '') for path in config['RecentsMRL']['list'].split(', ')]
+        if os.name == 'nt': # If Windows
+            path_prefix = 'file:///'
+        else: # If Linux ('posix')
+            path_prefix = 'file://'
+        
+        list = [path.replace(path_prefix, '') for path in config['RecentsMRL']['list'].split(', ')]
         times = [int(int(time)/1000) for time in config['RecentsMRL']['times'].split(', ')]
     except:
         print("History cannot be read from VLC history file.")
@@ -121,7 +145,6 @@ def get_video_to_play():
         if 0 != entry['time']:
             video_to_play = entry
         else:
-            videos = list_videos()
             cwd = os.getcwd().replace('\\', '/')
             
             index = 0
