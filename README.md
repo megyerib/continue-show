@@ -8,7 +8,7 @@
 
 ## How to use (Windows)
 
-1. Navigate to the ditrectory with the video files. It can contain subdirectories as well, the script scans them, too.
+1. Navigate to the directory with the video files. It can contain subdirectories as well, the script scans them, too.
 2. Run the `continue-show.bat` script. You can create another batch script in this directory to call it as well.
 
 ## Limitations
