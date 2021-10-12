@@ -1,4 +1,13 @@
-import os, sys, re, json, urllib.parse, subprocess
+"""
+Continue video series from the most recent location.
+"""
+
+import os
+import sys
+import re
+import json
+import urllib.parse
+import subprocess
 from configparser import RawConfigParser
 
 # Arguments
@@ -6,7 +15,7 @@ if len(sys.argv) < 3:
     print("Missing argument!")
     script_name = os.path.basename(__file__)
     print(f"Usage: python {script_name} [vlc_path] [vlc_history_file_path]")
-    exit()
+    sys.exit()
 
 vlc_path = sys.argv[1]
 vlc_history_path = sys.argv[2]
@@ -21,16 +30,16 @@ def list_recursively(path):
     List all files in a directory tree with relative path
     (ext4 does not return file names sorted)
     """
-    dir = list(os.walk(path))[0]
+    dir_list = list(os.walk(path))[0]
 
-    subdirs = sorted(dir[1])
-    files = sorted(dir[2])
+    subdirs = sorted(dir_list[1])
+    files = sorted(dir_list[2])
 
     file_list = []
 
-    for d in subdirs:
-        for f in list_recursively(f"{path}/{d}"):
-            file_list += f"{d}/{f}"
+    for subdir in subdirs:
+        for file in list_recursively(f"{path}/{subdir}"):
+            file_list += f"{subdir}/{file}"
 
     file_list += files
 
@@ -43,7 +52,7 @@ def list_videos():
     """
     files = list_recursively(".")
 
-    re_object = re.compile(f".+\.({'|'.join(VALID_FILE_TYPES)})$")  # File type filter
+    re_object = re.compile(f".+\\.({'|'.join(VALID_FILE_TYPES)})$")  # File type filter
     videos = list(filter(re_object.match, files))
 
     # Replace Windows path backslashes
@@ -76,7 +85,7 @@ def list_vlc_history(path):
         else:  # If Linux ('posix')
             path_prefix = "file://"
 
-        list = [
+        paths = [
             path.replace(path_prefix, "")
             for path in config["RecentsMRL"]["list"].split(", ")
         ]
@@ -88,8 +97,8 @@ def list_vlc_history(path):
         return []
 
     return [
-        {"path": urllib.parse.unquote(list[i]), "time": times[i]}
-        for i in range(0, len(list))
+        {"path": urllib.parse.unquote(paths[i]), "time": times[i]}
+        for i in range(0, len(paths))
     ]
 
 
@@ -101,12 +110,12 @@ def get_recently_played_from_vlc_history():
     """
     cwd = os.getcwd().replace("\\", "/")  # For Windows paths
 
-    p = re.compile(f"^{cwd}/.+")
+    pattern = re.compile(f"^{cwd}/.+")
 
     history = list_vlc_history(vlc_history_path)
 
     for entry in history:
-        if p.match(entry["path"]):
+        if pattern.match(entry["path"]):
             return entry
 
     return None
@@ -130,6 +139,7 @@ def get_recently_played_from_json(path):
 
 
 def get_latter(time1: dict, time2: dict) -> dict:
+    """Return the item which is latter in alphabetical order or time"""
     if time1["path"] > time2["path"]:
         return time1
 
@@ -138,8 +148,8 @@ def get_latter(time1: dict, time2: dict) -> dict:
 
     if time1["time"] > time2["time"]:
         return time1
-    else:
-        return time2
+
+    return time2
 
 
 def get_recently_played():
@@ -171,20 +181,20 @@ def get_video_to_play():
     entry = get_recently_played()
     videos = list_videos()
 
-    if None != entry:
-        if 0 != entry["time"]:
+    if entry:
+        if entry["time"] != 0:
             video_to_play = entry
         else:
             cwd = os.getcwd().replace("\\", "/")
 
-            index = 0
+            i_recent = 0
 
-            for i in range(0, len(videos)):
-                if f"{cwd}/{videos[i]}" == entry["path"]:
-                    index = i
+            for i, video in enumerate(videos):
+                if f"{cwd}/{video}" == entry["path"]:
+                    i_recent = i
                     break
 
-            video_to_play = {"path": videos[(index + 1) % len(videos)], "time": 0}
+            video_to_play = {"path": videos[(i_recent + 1) % len(videos)], "time": 0}
     elif len(videos) != 0:
         video_to_play = {"path": videos[0], "time": 0}
     else:
@@ -213,7 +223,7 @@ def play_video(video):
 
     cmd = f"\"{vlc_path}\" --start-time={video['time']}.0 \"{video['path']}\" --fullscreen"
 
-    subprocess.run(cmd, shell=True)
+    subprocess.run(cmd, shell=True, check=False)
 
 
 def main():
