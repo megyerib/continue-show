@@ -9,233 +9,267 @@ import json
 import urllib.parse
 import subprocess
 from configparser import RawConfigParser
-
-# Arguments
-if len(sys.argv) < 3:
-    print("Missing argument!")
-    script_name = os.path.basename(__file__)
-    print(f"Usage: python {script_name} [vlc_path] [vlc_history_file_path]")
-    sys.exit()
-
-vlc_path = sys.argv[1]
-vlc_history_path = sys.argv[2]
-
-# Constants
-VALID_FILE_TYPES = {"mp4", "mkv", "avi"}
-JSON_HISTORY_FILE = "recently_played.json"
+from dataclasses import dataclass
 
 
-def list_recursively(path):
-    """
-    List all files in a directory tree with relative path
-    (ext4 does not return file names sorted)
-    """
-    dir_list = list(os.walk(path))[0]
+class PlayLocation:
+    path: str
+    time: int
 
-    subdirs = sorted(dir_list[1])
-    files = sorted(dir_list[2])
-
-    file_list = []
-
-    for subdir in subdirs:
-        for file in list_recursively(f"{path}/{subdir}"):
-            file_list += f"{subdir}/{file}"
-
-    file_list += files
-
-    return file_list
+    def __init__(self, path, time):
+        self.path = path
+        self.time = time
 
 
-def list_videos():
-    """
-    return: The list of videos in the current directory and its subdirectories
-    """
-    files = list_recursively(".")
+class VlcHistory:
+    def __init__(self, ini_path):
+        self.path = ini_path
+        self.config = self._read_config(self.path)
 
-    re_object = re.compile(f".+\\.({'|'.join(VALID_FILE_TYPES)})$")  # File type filter
-    videos = list(filter(re_object.match, files))
+    def refresh(self):
+        """Read the history again"""
+        self.config = self._read_config(self.path)
 
-    # Replace Windows path backslashes
-    return [video.replace("\\", "/") for video in videos]
+    def get_recently_played(self) -> PlayLocation:
+        """
+        return: recently played video which is located in the current directory from VLC history file
+                {path, time} if there is such video in the history
+                None if there is no such file in the history
+        """
+        cwd = os.getcwd().replace("\\", "/")  # For Windows paths
 
+        pattern = re.compile(f"^{cwd}/.+")
 
-def list_vlc_history(path):
-    """
-    path:   VLC ini file path
+        history = self._get_history()
 
-    return: VLC history list [{path (abs), time}]; newest to oldest
-    """
-    config = RawConfigParser()  # https://stackoverflow.com/a/2538141/2721340
+        for entry in history:
+            if pattern.match(entry.path):
+                return entry
 
-    try:
-        config.read(path)
-    except:
-        print(f"VLC history file '{path}' does not exist.")
-        return []
-
-    try:
-        # Remove trailing commas
-        if config["RecentsMRL"]["list"][-1] == ",":
-            config["RecentsMRL"]["list"] = config["RecentsMRL"]["list"][:-1]
-            config["RecentsMRL"]["times"] = config["RecentsMRL"]["times"][:-1]
-
-        # Split
-        if os.name == "nt":  # If Windows
-            path_prefix = "file:///"
-        else:  # If Linux ('posix')
-            path_prefix = "file://"
-
-        paths = [
-            path.replace(path_prefix, "")
-            for path in config["RecentsMRL"]["list"].split(", ")
-        ]
-        times = [
-            int(int(time) / 1000) for time in config["RecentsMRL"]["times"].split(", ")
-        ]
-    except:
-        print("History cannot be read from VLC history file.")
-        return []
-
-    return [
-        {"path": urllib.parse.unquote(paths[i]), "time": times[i]}
-        for i in range(0, len(paths))
-    ]
-
-
-def get_recently_played_from_vlc_history():
-    """
-    return: recently played video which is located in the current directory from VLC history file
-            {path, time} if there is such video in the history
-            None if there is no such file in the history
-    """
-    cwd = os.getcwd().replace("\\", "/")  # For Windows paths
-
-    pattern = re.compile(f"^{cwd}/.+")
-
-    history = list_vlc_history(vlc_history_path)
-
-    for entry in history:
-        if pattern.match(entry["path"]):
-            return entry
-
-    return None
-
-
-def get_recently_played_from_json(path):
-    """
-    return: recently played video from own history file {path (absolute), time}
-            None if history file does not exist
-    """
-    try:
-        with open(path) as json_file:
-            entry = json.load(json_file)
-            cwd = os.getcwd().replace("\\", "/")
-            entry["path"] = f"{cwd}/{entry['path']}"
-            return entry
-    except:
-        print("JSON history file does not exist")
-
-    return None
-
-
-def get_latter(time1: dict, time2: dict) -> dict:
-    """Return the item which is latter in alphabetical order or time"""
-    if time1["path"] > time2["path"]:
-        return time1
-
-    if time2["path"] > time1["path"]:
-        return time2
-
-    if time1["time"] > time2["time"]:
-        return time1
-
-    return time2
-
-
-def get_recently_played():
-    """
-    return: latter recently played video from VLC history or from own history file if both do exist
-            the existing one if only one of them exists
-            None if both lookups are unsuccessful
-    """
-    recently_played_json = get_recently_played_from_json(JSON_HISTORY_FILE)
-    recently_played_vlc = get_recently_played_from_vlc_history()
-
-    if recently_played_json and recently_played_vlc:
-        return get_latter(recently_played_json, recently_played_vlc)
-
-    if recently_played_json:
-        return recently_played_json
-
-    if recently_played_vlc:
-        return recently_played_vlc
-
-    return None
-
-
-def get_video_to_play():
-    """
-    return: recently played video if it wasn't finished
-            next video if recently played video was finished
-    """
-    entry = get_recently_played()
-    videos = list_videos()
-
-    if entry:
-        if entry["time"] != 0:
-            video_to_play = entry
-        else:
-            cwd = os.getcwd().replace("\\", "/")
-
-            i_recent = 0
-
-            for i, video in enumerate(videos):
-                if f"{cwd}/{video}" == entry["path"]:
-                    i_recent = i
-                    break
-
-            video_to_play = {"path": videos[(i_recent + 1) % len(videos)], "time": 0}
-    elif len(videos) != 0:
-        video_to_play = {"path": videos[0], "time": 0}
-    else:
         return None
 
-    return video_to_play
+    @staticmethod
+    def _read_config(ini_path) -> RawConfigParser:
+        try:
+            config = RawConfigParser()  # https://stackoverflow.com/a/2538141/2721340
+            config.read(ini_path)
+            return config
+        except:
+            print(f"VLC history file '{ini_path}' does not exist.")
+            return None
+
+    @staticmethod
+    def _path_prefix() -> str:
+        if os.name == "nt":  # If Windows
+            return "file:///"
+        else:  # If Linux ('posix')
+            return "file://"
+
+    def _get_history(self) -> list[PlayLocation]:
+        """
+        return: VLC history list [{path (abs), time}]; newest to oldest
+        """
+        if not self.config:
+            return []
+
+        # Remove trailing commas
+        self.config["RecentsMRL"]["list"].rstrip(",")
+        self.config["RecentsMRL"]["times"].rstrip(",")
+
+        # Split
+        paths = self.config["RecentsMRL"]["list"].split(", ")
+        paths = [path.replace(self._path_prefix(), "") for path in paths]
+        paths = [urllib.parse.unquote(path) for path in paths]
+
+        times = self.config["RecentsMRL"]["times"].split(", ")
+        times = [int(time) // 1000 for time in times]
+
+        return [PlayLocation(path, time) for path, time in zip(paths, times)]
 
 
-def write_json_history(entry):
-    """
-    Make JSON histroy file with recently played video path and timestamp
-    """
-    cwd = os.getcwd().replace("\\", "/")
-    entry["path"] = re.sub(f"^{cwd}/", "", entry["path"])
+class JsonHistory:
+    def __init__(self, json_path):
+        self.path = json_path
 
-    with open(JSON_HISTORY_FILE, "w") as json_file:
-        json.dump(entry, json_file, indent=4)
+    def get_recently_played(self) -> PlayLocation:
+        """
+        return: recently played video from own history file {path (absolute), time}
+                None if history file does not exist
+        """
+        recently_played = self._read_json()
+
+        if not recently_played:
+            return None
+
+        ret = PlayLocation(recently_played["path"], recently_played["time"])
+
+        cwd = os.getcwd().replace("\\", "/")
+        ret.path = f"{cwd}/{ret.path}"
+        return ret
+
+    def save_history(self, location: PlayLocation):
+        """
+        Make JSON histroy file with recently played video path and timestamp
+        """
+        cwd = os.getcwd().replace("\\", "/")
+
+        entry = {"path": re.sub(f"^{cwd}/", "", location.path), "time": location.time}
+
+        with open(self.path, "w") as json_file:
+            json.dump(entry, json_file, indent=4)
+
+    def _read_json(self) -> dict:
+        try:
+            with open(self.path) as json_file:
+                return json.load(json_file)
+        except:
+            print(f"JSON history file {self.path} does not exist")
+            return None
 
 
-def play_video(video):
-    """
-    Play the video['path'] file from video['time'] seconds in VLC
-    """
-    if os.name == "nt":  # If Windows
-        video["path"] = video["path"].replace("/", "\\")
+class VlcPlayer:
+    def __init__(self, vlc_path):
+        self.vlc_path = vlc_path
 
-    cmd = f"\"{vlc_path}\" --start-time={video['time']}.0 \"{video['path']}\" --fullscreen"
+    def play(self, location: PlayLocation):
+        """
+        Play the 'path' file from 'time' seconds in VLC
+        """
+        if os.name == "nt":  # If Windows
+            video_path = location.path.replace("/", "\\")
 
-    subprocess.run(cmd, shell=True, check=False)
+        cmd = f'"{self.vlc_path}" --start-time={location.time}.0 "{video_path}" --fullscreen'
+
+        subprocess.run(cmd, shell=True, check=False)
+
+
+class VideoLister:
+    FILE_NAME_REGEX = "^.+\\.(mp4|mkv|avi)$"
+
+    def __init__(self, path):
+        self.path = path
+
+    def list_videos(self) -> list[str]:
+        """
+        return: The list of videos' path in the current directory
+                and its subdirectories (in alphabetical order)
+        """
+        files = self._list_recursively(self.path)
+
+        pattern = re.compile(self.FILE_NAME_REGEX)
+        videos = list(filter(pattern.match, files))
+
+        # Replace Windows path backslashes
+        return [video.replace("\\", "/") for video in videos]
+
+    def _list_recursively(self, path) -> list[str]:
+        """
+        List all files in a directory tree with relative path
+        (ext4 does not return file names sorted)
+        """
+        dir_list = list(os.walk(path))[0]
+        subdirs = sorted(dir_list[1])
+        files = sorted(dir_list[2])
+
+        file_list = []
+
+        for subdir in subdirs:
+            for file in self._list_recursively(f"{path}/{subdir}"):
+                file_list += f"{subdir}/{file}"
+
+        return file_list + files
+
+
+class VideoChooser:
+    def __init__(self, json_hst: JsonHistory, vlc_hst: VlcHistory):
+        self.json_hst = json_hst
+        self.vlc_hst = vlc_hst
+
+    def get_video_to_play(self) -> PlayLocation:
+        """
+        return: recently played video if it wasn't finished
+                next video if recently played video was finished
+        """
+        entry = self._get_recently_played()
+        videos = VideoLister(".").list_videos()
+
+        if entry:
+            if entry.time != 0:
+                video_to_play = entry
+            else:
+                cwd = os.getcwd().replace("\\", "/")
+
+                i_recent = 0
+
+                for i, video in enumerate(videos):
+                    if f"{cwd}/{video}" == entry.path:
+                        i_recent = i
+                        break
+
+                video_to_play = PlayLocation(videos[(i_recent + 1) % len(videos)], 0)
+        elif len(videos) > 0:
+            video_to_play = PlayLocation(videos[0], 0)
+        else:
+            return None
+
+        return video_to_play
+
+    @staticmethod
+    def _get_latter(loc1: PlayLocation, loc2: PlayLocation) -> PlayLocation:
+        """Return the item which is latter in alphabetical order or time"""
+        if loc1.path > loc2.path:
+            return loc1
+
+        if loc2.path > loc1.path:
+            return loc2
+
+        if loc1.time > loc2.time:
+            return loc1
+
+        return loc2
+
+    def _get_recently_played(self) -> PlayLocation:
+        """
+        return: latter recently played video from VLC history or from own history file if both do exist
+                the existing one if only one of them exists
+                None if both lookups are unsuccessful
+        """
+        recently_played_json = self.json_hst.get_recently_played()
+        recently_played_vlc = self.vlc_hst.get_recently_played()
+
+        if recently_played_json and recently_played_vlc:
+            return self._get_latter(recently_played_json, recently_played_vlc)
+
+        if recently_played_json:
+            return recently_played_json
+
+        if recently_played_vlc:
+            return recently_played_vlc
+
+        return None
 
 
 def main():
-    video_to_play = get_video_to_play()
-    print("To be played")
-    print(video_to_play)
+    if len(sys.argv) != 3:
+        print("Argument error!")
+        script_name = os.path.basename(__file__)
+        print(f"Usage: python {script_name} [vlc_path] [vlc_history_file_path]")
+        sys.exit()
+
+    vlc_path = sys.argv[1]
+    vlc_history_path = sys.argv[2]
+
+    json_hst = JsonHistory("recently_played.json")
+    vlc_hst = VlcHistory(vlc_history_path)
+
+    video_to_play = VideoChooser(json_hst, vlc_hst).get_video_to_play()
 
     if video_to_play:
-        play_video(video_to_play)
+        VlcPlayer(vlc_path).play(video_to_play)
 
-        recently_played = get_recently_played_from_vlc_history()
-        write_json_history(recently_played)
+        vlc_hst.refresh()
+        recently_played = vlc_hst.get_recently_played()
+        json_hst.save_history(recently_played)
     else:
         print("There are no videos to play in this directory")
 
