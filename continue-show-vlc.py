@@ -113,25 +113,35 @@ def get_recently_played_from_json(path):
 
     return None
 
+def get_latter(time1: dict, time2: dict) -> dict:
+    if time1['path'] > time2['path']:
+        return time1
+    
+    if time2['path'] > time1['path']:
+        return time2
+    
+    if time1['time'] > time2['time']:
+        return time1
+    else:
+        return time2
+
 def get_recently_played():
     """
-    return: recently played video from VLC history file if exists
-            recently played video from own history file if file exists
+    return: latter recently played video from VLC history or from own history file if both do exist
+            the existing one if only one of them exists
             None if both lookups are unsuccessful
     """
-    recently_played = get_recently_played_from_json(JSON_HISTORY_FILE)
-
-    if recently_played:
-        print(f"Recently played (from local history file):")
-        print(recently_played)
-        return recently_played
-
-    recently_played = get_recently_played_from_vlc_history()
-
-    if recently_played:
-        print(f"Recently played (from VLC history):")
-        print(recently_played)
-        return recently_played
+    recently_played_json = get_recently_played_from_json(JSON_HISTORY_FILE)
+    recently_played_vlc = get_recently_played_from_vlc_history()
+    
+    if recently_played_json and recently_played_vlc:
+        return get_latter(recently_played_json, recently_played_vlc)
+        
+    if recently_played_json:
+        return recently_played_json
+    
+    if recently_played_vlc:
+        return recently_played_vlc
 
     return None
 
