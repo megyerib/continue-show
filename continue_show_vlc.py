@@ -44,7 +44,8 @@ class VlcHistory:
 
         for entry in history:
             if pattern.match(entry.path):
-                return entry
+                path = entry.path.removeprefix(f"{cwd}/")
+                return PlayLocation(path, entry.time)
 
         return None
 
@@ -66,9 +67,6 @@ class VlcHistory:
             return "file://"
 
     def _get_history(self) -> list[PlayLocation]:
-        """
-        return: VLC history list [{path (abs), time}]; newest to oldest
-        """
         if not self.config:
             return []
 
@@ -93,7 +91,7 @@ class JsonHistory:
 
     def get_recently_played(self) -> PlayLocation:
         """
-        return: recently played video from own history file {path (absolute), time}
+        return: recently played video from own history file
                 None if history file does not exist
         """
         recently_played = self._read_json()
@@ -101,19 +99,13 @@ class JsonHistory:
         if not recently_played:
             return None
 
-        ret = PlayLocation(recently_played["path"], recently_played["time"])
-
-        cwd = os.getcwd().replace("\\", "/")
-        ret.path = f"{cwd}/{ret.path}"
-        return ret
+        return PlayLocation(recently_played["path"], recently_played["time"])
 
     def save_history(self, location: PlayLocation):
         """
         Make JSON histroy file with recently played video path and timestamp
         """
-        cwd = os.getcwd().replace("\\", "/")
-
-        entry = {"path": re.sub(f"^{cwd}/", "", location.path), "time": location.time}
+        entry = {"path": location.path, "time": location.time}
 
         with open(self.path, "w") as json_file:
             json.dump(entry, json_file, indent=4)
@@ -197,12 +189,10 @@ class VideoChooser:
             if entry.time != 0:
                 video_to_play = entry
             else:
-                cwd = os.getcwd().replace("\\", "/")
-
                 i_recent = 0
 
                 for i, video in enumerate(videos):
-                    if f"{cwd}/{video}" == entry.path:
+                    if video == entry.path:
                         i_recent = i
                         break
 
