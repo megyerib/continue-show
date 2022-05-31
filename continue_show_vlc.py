@@ -9,7 +9,6 @@ import json
 import urllib.parse
 import subprocess
 from configparser import RawConfigParser
-from dataclasses import dataclass
 
 
 class PlayLocation:
@@ -32,18 +31,16 @@ class VlcHistory:
 
     def get_recently_played(self) -> PlayLocation:
         """
-        return: recently played video which is located in the current directory from VLC history file
-                {path, time} if there is such video in the history
+        return: recently played video which from current directory from
+                VLC history file if there is such video in the history
                 None if there is no such file in the history
         """
         cwd = os.getcwd().replace("\\", "/")  # For Windows paths
 
-        pattern = re.compile(f"^{cwd}/.+")
-
         history = self._get_history()
 
         for entry in history:
-            if pattern.match(entry.path):
+            if entry.path.startswith(f"{cwd}/"):
                 path = entry.path.removeprefix(f"{cwd}/")
                 return PlayLocation(path, entry.time)
 
@@ -63,8 +60,8 @@ class VlcHistory:
     def _path_prefix() -> str:
         if os.name == "nt":  # If Windows
             return "file:///"
-        else:  # If Linux ('posix')
-            return "file://"
+        # If Linux ('posix')
+        return "file://"
 
     def _get_history(self) -> list[PlayLocation]:
         if not self.config:
@@ -167,7 +164,7 @@ class VideoLister:
 
         for subdir in subdirs:
             for file in self._list_recursively(f"{path}/{subdir}"):
-                file_list += f"{subdir}/{file}"
+                file_list.append(f"{subdir}/{file}")
 
         return file_list + files
 
@@ -220,8 +217,8 @@ class VideoChooser:
 
     def _get_recently_played(self) -> PlayLocation:
         """
-        return: latter recently played video from VLC history or from own history file if both do exist
-                the existing one if only one of them exists
+        return: latter recently played video from VLC history or from own history file
+                if both do exist the existing one if only one of them exists
                 None if both lookups are unsuccessful
         """
         recently_played_json = self.json_hst.get_recently_played()
@@ -243,7 +240,7 @@ def main():
     if len(sys.argv) != 3:
         print("Argument error!")
         script_name = os.path.basename(__file__)
-        print(f"Usage: python {script_name} [vlc_path] [vlc_history_file_path]")
+        print(f"Usage: python3 {script_name} [vlc_path] [vlc_history_file_path]")
         sys.exit()
 
     vlc_path = sys.argv[1]
