@@ -139,7 +139,7 @@ class VlcPlayer:
 
 
 class VideoLister:
-    FILE_NAME_REGEX = "^.+\\.(mp4|mkv|avi)$"
+    FILE_NAME_REGEX = "^.+\\.(mp4|mkv|avi|webm)$"
 
     def __init__(self, path):
         self.path = path
