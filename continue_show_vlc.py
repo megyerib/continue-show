@@ -154,6 +154,11 @@ class VideoLister:
         pattern = re.compile(self.FILE_NAME_REGEX)
         videos = list(filter(pattern.match, files))
 
+        # Remove samples
+        wo_samples = [v for v in videos if "sample" not in v.lower()]
+        if wo_samples:
+            videos = wo_samples
+
         # Replace Windows path backslashes
         return [video.replace("\\", "/") for video in videos]
 
