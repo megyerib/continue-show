@@ -127,7 +127,13 @@ class VlcPlayer:
         if os.name == "nt":  # If Windows
             video_path = location.path.replace("/", "\\")
 
-        cmd = f'"{self.vlc_path}" --start-time={location.time}.0 "{video_path}" --fullscreen'
+        cmd = [
+            self.vlc_path,
+            f"--start-time={location.time}.0",
+            video_path,
+            "--fullscreen",
+            # "--play-and-exit",
+        ]
 
         subprocess.run(cmd, shell=True, check=False)
 
